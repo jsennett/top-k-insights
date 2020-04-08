@@ -44,7 +44,28 @@ def enumerate_insight(subspace, dimension, composite_extractor):
         for each insight type:
             score = impact(subspace, dimension) * significance(result_set)
     """
-    pass
+    if is_valid(subspace, dimension, composite_extractor):
+        pass
+
+    else:
+        logging.info("Invalid SG/CE pair, skipping.")
+        logging.info("Subspace: " + str(subspace))
+        logging.info("Dividing Dimension: " + str(dimension))
+        logging.info(str(composite_extractor)
+
+def is_valid(subspace, dimension, composite_extractor):
+    """
+    A composite extractor is invalid iff pct is not the first extractor used.
+    With a depth of 2 (and only 1 extractor), this is never a concern.
+
+    A sibling group SG(S, Da) is a valid input for composite extractor Ce iff
+    for each pair (E, Dx) in Ce, Dx=Da or S[Dx] != "∗" (all values).
+    """
+    for (extractor, measure) in composite_extractor[1:]:
+        if measure != dimension and subspace.get(measure) is None:
+            return False
+    return True
+
 
 def impact(subspace, dimension):
     """
