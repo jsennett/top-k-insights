@@ -16,7 +16,9 @@ class Dataset:
         """
         subspace is a dict of ('dimension_name':'value') pairs
             for filtered dimensions. Excluding a dimension means no filter.
-        extractor is one of ['RANK', 'DIFF_AVG', 'SUM', 'DIFF_PREV']
+        extractor is one of ['sum', 'rank', 'delta_prev', 'pct', 'delta_avg']
+
+        TODO: only return single extractor results, not all four.
         """
         # Filter along all subspaces
         subset = self.data.loc[(self.data[list(subspace)] == pd.Series(subspace)).all(axis=1)]
