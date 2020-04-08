@@ -15,5 +15,4 @@ def test_extract():
 
     results = cars_dataset.extract(subspace, dividing_dimension, extractor_type)
     assert(len(results) != 0)
-    print(results)
     assert(all(results.columns == ["year", "vehicles", "rank", "pct", "delta_avg", "delta_prev"]))

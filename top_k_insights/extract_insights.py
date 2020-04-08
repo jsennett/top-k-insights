@@ -32,12 +32,12 @@ def extract_insights(dataset, depth, k):
 
     for extractor in composite_extractors:
         for dimension in dataset.dimensions:
-            enumerate_insight({}, dimension, extractor)
+            enumerate_insight({}, dimension, extractor, dataset)
 
     # TODO: return the topk insights, format them, etc.
     return topk
 
-def enumerate_insight(subspace, dimension, composite_extractor):
+def enumerate_insight(subspace, dimension, composite_extractor, dataset):
     """
     if is_valid(subspace, dimension, composite extractor):
         result_set = extract(subspace, dimensionm, composite extractor)
@@ -45,13 +45,19 @@ def enumerate_insight(subspace, dimension, composite_extractor):
             score = impact(subspace, dimension) * significance(result_set)
     """
     if is_valid(subspace, dimension, composite_extractor):
-        pass
-
+        logging.info("    Valid SG/CE combo: subspace(%s), dim(%s), ce(%s)" % (subspace, dimension, composite_extractor))
+        result_set = None # Placeholder; extract result_set by appling CE to SG(S, Dx)
+        score = impact(subspace, dimension) * significance(result_set)
+        # todo: update min-heap if score exceeds top kth score
     else:
-        logging.info("Invalid SG/CE pair, skipping.")
-        logging.info("Subspace: " + str(subspace))
-        logging.info("Dividing Dimension: " + str(dimension))
-        logging.info(str(composite_extractor)
+        logging.info("Invalid SG/CE combo: subspace(%s), dim(%s), ce(%s)" % (subspace, dimension, composite_extractor))
+
+    # Enumerate child subspaces
+    for value in dataset.data[dimension].unique():
+        subspace[dimension] = value
+        for new_dimension in set(dataset.dimensions) - set(subspace):
+            enumerate_insight(subspace, new_dimension, composite_extractor, dataset)
+
 
 def is_valid(subspace, dimension, composite_extractor):
     """
@@ -70,13 +76,13 @@ def is_valid(subspace, dimension, composite_extractor):
 def impact(subspace, dimension):
     """
     """
-    pass
+    return 0.5 # placeholder
 
 
 def significance(result_set):
     """
     """
-    pass
+    return 0.5 # placeholder
 
 
 def main():
