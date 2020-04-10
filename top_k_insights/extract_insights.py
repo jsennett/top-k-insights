@@ -30,9 +30,9 @@ def extract_insights(dataset, depth, k):
     logging.info(composite_extractors)
 
 
-    for extractor in composite_extractors:
+    for composite_extractor in composite_extractors:
         for dimension in dataset.dimensions:
-            enumerate_insight({}, dimension, extractor, dataset)
+            enumerate_insight({}, dimension, composite_extractor, dataset)
 
     # TODO: return the topk insights, format them, etc.
     return topk
@@ -76,13 +76,15 @@ def is_valid(subspace, dimension, composite_extractor):
 def impact(subspace, dimension):
     """
     """
-    return 0.5 # placeholder
+    import random
+    return random.randint(0,100) / 100 # placeholder
 
 
 def significance(result_set):
     """
     """
-    return 0.5 # placeholder
+    import random
+    return random.randint(0,100) / 100 # placeholder
 
 
 def main():

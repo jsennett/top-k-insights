@@ -10,6 +10,7 @@ class Dataset:
         self.data = pd.read_csv(filename, encoding='mac_roman')
         self.measure = self.data.columns[-1]
         self.dimensions = self.data.columns[:-1]
+        self.top_insights = []
 
 
     def extract(self, subspace, dividing_dimension, extractor):
