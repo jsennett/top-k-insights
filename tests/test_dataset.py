@@ -9,13 +9,58 @@ def test_init():
     assert(len(dataset.data.columns) == 4)
 
 def test_extract_result_set():
+    dataset.depth = 2
+
+    # Test each extractor type
     subspace = {"brand":"Toyota"}
     dividing_dimension = "year"
-    extractor_type = "RANK"
+    analysis_dimension = "year"
+    for extractor in ['rank', 'pct', 'delta_avg', 'delta_prev']:
+        ce = [('sum', 'vehicles'), (extractor, analysis_dimension)]
+        assert(dataset.is_valid(subspace, dividing_dimension, ce))
 
-    results = dataset.extract_result_set(subspace, dividing_dimension, extractor_type)
-    assert(len(results) != 0)
-    assert(all(results.columns == ["year", "vehicles", "rank", "pct", "delta_avg", "delta_prev"]))
+        print("-" * 40)
+        print(extractor + " across " + analysis_dimension + "s of sum of sales per " + dividing_dimension + ", just considering the subspace of", subspace)
+        results = dataset.extract_result_set(subspace, dividing_dimension, ce)
+        print(results)
+
+    # Test different dimensions
+    subspace = {}
+    dividing_dimension = "country"
+    analysis_dimension = "country"
+    for extractor in ['rank', 'pct', 'delta_avg']:
+        ce = [('sum', 'vehicles'), (extractor, analysis_dimension)]
+        assert(dataset.is_valid(subspace, dividing_dimension, ce))
+
+        print("-" * 40)
+        print(extractor + " across " + analysis_dimension + "s of sum of sales per " + dividing_dimension + ", just considering the subspace of", subspace)
+        results = dataset.extract_result_set(subspace, dividing_dimension, ce)
+        print(results)
+
+     # Test where subspace[analysis_dimension] != *
+    subspace = {'brand':'Toyota'}
+    dividing_dimension = "year"
+    analysis_dimension = "brand" # issue: makes no difference if this is year or brand
+    for extractor in ['rank', 'pct', 'delta_avg']:
+        ce = [('sum', 'vehicles'), (extractor, analysis_dimension)]
+        assert(dataset.is_valid(subspace, dividing_dimension, ce))
+
+        print("-" * 40)
+        print(extractor + " across " + analysis_dimension + "s of sum of sales per " + dividing_dimension + ", just considering the subspace of", subspace)
+        results = dataset.extract_result_set(subspace, dividing_dimension, ce)
+        print(results)
+
+    # Example from paper: (delta_prev, year) for each brand and year
+    subspace = {"year":2012}
+    dividing_dimension = "brand"
+    analysis_dimension = "year"
+    extractor = 'delta_prev'
+    ce = [('sum', 'vehicles'), (extractor, analysis_dimension)]
+    print("-" * 40)
+    print(extractor + " of " + analysis_dimension + "s of sum of sales per " + dividing_dimension + ", just considering the subspace of", subspace)
+    results = dataset.extract_result_set(subspace, dividing_dimension, ce)
+    print(results)
+
 
 def test_extract_insights_depth1():
     dataset.extract_insights(depth=1, k=5)

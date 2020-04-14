@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import logging
 import heapq
 
@@ -65,7 +66,13 @@ class Dataset:
         """
         if self.is_valid(subspace, dimension, composite_extractor):
             logging.info("    Valid SG/CE combo: subspace(%s), dim(%s), ce(%s)" % (subspace, dimension, composite_extractor))
-            result_set = None # Placeholder; extract result_set by appling CE to SG(S, Dx)
+
+            # extract result set
+            result_set = self.extract_result_set(subspace, dimension, composite_extractor)
+            if result_set is None:
+                return
+
+            # compute insight score
             score = self.impact(subspace, dimension) * self.significance(result_set)
 
             # Generate a new insight with info needed to interpret it
@@ -81,6 +88,7 @@ class Dataset:
             logging.info("Invalid SG/CE combo: subspace(%s), dim(%s), ce(%s)" % (subspace, dimension, composite_extractor))
 
         # Enumerate child subspaces
+        # TODO: see why some subspaces aren't appearing, like year==2016
         unique_vals = self.data[dimension].unique()
         for value in unique_vals:
             subspace[dimension] = value
@@ -95,10 +103,17 @@ class Dataset:
 
         A sibling group SG(S, Da) is a valid input for composite extractor Ce iff
         for each pair (E, Dx) in Ce, Dx=Da or S[Dx] != "∗" (all values).
+
+        In addition, the extractor delta_prev is only valid for ordinal dimensions;
+        Assume that the only ordinal dimension will be 'year'.
         """
         for (extractor, measure) in composite_extractor[1:]:
             if measure != dimension and subspace.get(measure) is None:
                 return False
+
+            if extractor == 'delta_prev' and dimension != 'year':
+                return False
+
         return True
 
 
@@ -116,20 +131,114 @@ class Dataset:
         return random.randint(0,100) / 100 # placeholder
 
 
-    def extract_result_set(self, subspace, dividing_dimension, extractor):
+    def extract_result_set(self, subspace, dividing_dimension, composite_extractor):
         """
         subspace is a dict of ('dimension_name':'value') pairs
             for filtered dimensions. Excluding a dimension means no filter.
-        extractor is one of ['sum', 'rank', 'delta_prev', 'pct', 'delta_avg']
 
-        TODO: only return single extractor results, not all four.
+        result_set = empty-set
+        for val in dividing_dimension:
+            subspace[dividing_dimension] = val
+            partial_result_set = recur_extract_result_set(subspace, self.depth, composite_extractor)
+            partial_result_set['subspace'] = str(subspace) # decode with eval()
+            result_set += partial_result_set
+
+        unique_vals = self.data[dimension].unique()
         """
+        logging.debug("extract_result_set(%s, %s, %s" % (subspace, dividing_dimension, composite_extractor))
+
+        if self.depth == 1:
+            subset = self.data.loc[(self.data[list(subspace)] == pd.Series(subspace, dtype=object)).all(axis=1)]
+            result_set = subset.groupby(dividing_dimension).agg({self.measure:'sum'})
+            return result_set
+
+        (extractor, analysis_dimension) = composite_extractor[1]
+        subset = self.data.loc[(self.data[list(subspace)] == pd.Series(subspace, dtype=object)).all(axis=1)]
+
+        # Ensure that delta_prev subset includes previous year even when the
+        # subspace excludes it; we need the prev year to be able to
+        # calculate delta_prev. Once delta_prev is calculated, exclude the
+        # previous year from the result set
+        if extractor == 'delta_prev' and 'year' in subspace:
+            previous_year_subspace = subspace.copy()
+            previous_year_subspace['year'] -= 1
+            subset = subset.append(self.data.loc[(self.data[list(previous_year_subspace)] == pd.Series(previous_year_subspace, dtype=object)).all(axis=1)])
+
+        # First level of aggregation: sum of the original measure
+        result_set = subset.groupby([dividing_dimension]).agg({self.measure:'sum'})
+
+        # Add dimension information back into the result set
+        result_set = result_set.reset_index(drop=False)
+        for dim in self.dimensions:
+            if dim not in result_set.columns:
+                result_set[dim] = subspace.get(dim, "*")
+
+
+        # Second level of aggregation, implicitly over the analysis_dimension
+        if extractor == 'rank':
+            result_set['rank'] = result_set[self.measure].rank(ascending=False)
+
+        elif extractor == 'pct':
+            result_set['pct'] = 100 * result_set[self.measure] / sum(result_set[self.measure])
+            # result_set['pct'] = 100 * result_set[self.measure] / result_set[self.measure].groupby(dividing_dimension).sum()
+
+        elif extractor == 'delta_avg':
+            result_set['delta_avg'] = result_set[self.measure] - (result_set[self.measure].sum() / len(result_set))
+
+        elif extractor == 'delta_prev':
+            result_set['delta_prev'] = result_set.sort_values("year")[self.measure].diff()
+            if 'year' in subspace:
+                result_set = result_set[result_set['year'] == subspace['year']]
+
+        return result_set
+
+
+    """
+    def recursive_extract_result_set(self, subspace, level, composite_extractor):
+
+        if level == 1:
+            subset = self.data.loc[(self.data[list(subspace)] == pd.Series(subspace, dtype=object)).all(axis=1)]
+            return sum(subset[self.measure])
+
+        # For level 2 results, calculate the aggregate measure of ce[1]
+        # using the sum of the main measure for the subspace, which is one
+        # of the siblings of the sibling groups
+        (extractor, analysis_dimension) = composite_extractor[level-1]
+        subset = self.data.loc[(self.data[list(subspace)] == pd.Series(subspace, dtype=object)).all(axis=1)]
+
+        # TODO: ensure that for delta_prev, the previous year is not excluded
+        # from the subset
+        subset = self.data.loc[(self.data[list(subspace)] == pd.Series(subspace, dtype=object)).all(axis=1)]
+
+
+
+        level_result_set = pd.DataFrame()
+
+        unique_vals = self.data[analysis_dimension].unique()
+        for val in unique_vals:
+
+            child_subspace = subspace.copy()
+            child_subspace[analysis_dimension] = val
+            child_subspace['M'] = self.recursive_extract_result_set(child_subspace, level-1, composite_extractor)
+            level_result_set.append(child_
+
+
+        result_set = result_set.append(child_result_set)
+
+
+        return result_set
+
+
+
         # Filter along all subspaces
-        subset = self.data.loc[(self.data[list(subspace)] == pd.Series(subspace)).all(axis=1)]
+        subset = self.data.loc[(self.data[list(subspace)] == pd.Series(subspace, dtype=object)).all(axis=1)]
 
         # Group by the dividing dimension
-        result_set = subset.groupby(dividing_dimension).\
-            agg({self.measure:'sum'})
+        result_set = subset.groupby(dividing_dimension).agg({self.measure:'sum'})
+
+        # Ignore result sets that are too small
+        if len(result_set) < 3:
+            return None
 
         # Calculate aggregate measures
         result_set['rank'] = result_set.rank(ascending=False)
@@ -140,6 +249,7 @@ class Dataset:
             result_set['delta_prev'] = result_set.sort_values("year")[self.measure].diff() / result_set.sort_values("year")["year"].diff()
 
         return result_set
+    """
 
 class Insight:
 
