@@ -1,4 +1,5 @@
 from top_k_insights.dataset import Dataset
+import pandas as pd
 
 dataset = Dataset("/Users/jsennett/Code/top-k-insights/data/vehicle-sales.csv")
 
@@ -85,4 +86,15 @@ def test_is_valid():
     ce = [("sum", "sales"), ("pct", "year")]
     assert(dataset.is_valid(subspace, dimension, ce) == False)
 
+def test_shape_significance():
+    # no relation
+    df = pd.DataFrame([[1, 0], [2, 0], [3, 0], [4, 0], [5, 0]], columns=["year","M"])
+    assert(dataset.shape_significance(df) == 0.0)
 
+    # perfect relation
+    df = pd.DataFrame([[1, 1], [2, 2], [3, 3], [4, 4], [5, 5]], columns=["year","M"])
+    assert(dataset.shape_significance(df) == 1.0)
+
+    # some relation
+    df = pd.DataFrame([[1, 0], [2, 2], [3, 1], [4, 3], [5, 3]], columns=["year","M"])
+    assert(.2 < dataset.shape_significance(df) < .8)

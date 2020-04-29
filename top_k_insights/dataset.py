@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 import logging
 import heapq
+import scipy.stats
+import powerlaw
+
 
 
 class Dataset:
@@ -69,20 +72,31 @@ class Dataset:
 
             # extract result set
             result_set = self.extract_result_set(subspace, dimension, composite_extractor)
-            if result_set is None:
+            if result_set is None or len(result_set) == 0:
                 return
 
-            # compute insight score
-            score = self.impact(subspace, dimension) * self.significance(result_set)
+            for insight_type in ["point", "shape"]:
 
-            # Generate a new insight with info needed to interpret it
-            new_insight = Insight(score, subspace, dimension, composite_extractor)
+                if insight_type == "shape" and dimension != "year":
+                    continue
 
-            # Update the minheap if the insight has a top k score
-            if len(self.top_insights) < self.k:
-                heapq.heappush(self.top_insights, new_insight)
-            else:
-                heapq.heappushpop(self.top_insights, new_insight)
+                if insight_type == "shape":
+                    significance = self.shape_significance
+
+                elif insight_type == "point":
+                    significance = self.point_significance
+
+                # compute insight score
+                score = self.impact(subspace, dimension) * significance(result_set)
+
+                # Generate a new insight with info needed to interpret it
+                new_insight = Insight(score, subspace, dimension, composite_extractor)
+
+                # Update the minheap if the insight has a top k score
+                if len(self.top_insights) < self.k:
+                    heapq.heappush(self.top_insights, new_insight)
+                else:
+                    heapq.heappushpop(self.top_insights, new_insight)
 
         else:
             logging.info("Invalid SG/CE combo: subspace(%s), dim(%s), ce(%s)" % (subspace, dimension, composite_extractor))
@@ -119,14 +133,54 @@ class Dataset:
 
     def impact(self, subspace, dimension):
         """
+        The impact score is the market share of the subspace S.
         """
-        import random
-        return random.randint(0,100) / 100 # placeholder
+        subset = self.data.loc[(self.data[list(subspace)] == pd.Series(subspace, dtype=object)).all(axis=1)]
+
+        numerator = subset[self.measure].sum()
+        denominator = self.data[self.measure].sum()
+
+        impact_score = float(numerator / denominator)
+        assert(0.0 <= impact_score <= 1.0)
+
+        return impact_score
 
 
-    def significance(self, result_set):
+    def shape_significance(self, result_set):
         """
+        input: result_set is a dataframe with measure column 'M',
+        output: a significance score between [0.0, 1.0]
+
+        Calculating the shape_significance is only relevant when
+        the dividing dimension is ordinal. For example, when the
+        sibling group uses "year" as its dividing dimension.
         """
+        assert("year" in result_set.columns and "M" in result_set.columns)
+        slope, intercept, r, p, stderr = scipy.stats.linregress(result_set['year'], result_set['M'])
+        return (r**2) * (1 - p)
+
+    def point_significance(self, result_set):
+        """
+        input: result_set is a dataframe with measure column 'M',
+        output: a significance score between [0.0, 1.0]
+
+        To calculate point significance:
+            obtain max value from X, X_max
+            Fit X - X_max to a power-law distribution
+            derive prediction error for x_max: err_max = x_max_pred - x_max
+            calculate p value: p = P(e > err_max | N(u, d))
+            sig = 1 - p
+        """
+        # find x_max, X \ x_max
+        x_max = result_set['M'].max()
+        result_set_without_max = result_set[result_set.index != result_set['M'].idxmax()]
+
+        # Fit X \ x_max to power-law distribution
+        #fit = powerlaw.Fit(np.array(result_set['M']) + 1, xmin=1, discrete=True)
+        #x_max, x_max_idx = max(result_set['M'])
+
+        # TODO: finish implementing point-significance function
+
         import random
         return random.randint(0,100) / 100 # placeholder
 
@@ -150,6 +204,14 @@ class Dataset:
         if self.depth == 1:
             subset = self.data.loc[(self.data[list(subspace)] == pd.Series(subspace, dtype=object)).all(axis=1)]
             result_set = subset.groupby(dividing_dimension).agg({self.measure:'sum'})
+            result_set.rename(columns={self.measure:'M'}, inplace=True)
+
+            # Add dimension information back into the result set
+            result_set = result_set.reset_index(drop=False)
+            for dim in self.dimensions:
+                if dim not in result_set.columns:
+                    result_set[dim] = subspace.get(dim, "*")
+
             return result_set
 
         (extractor, analysis_dimension) = composite_extractor[1]
@@ -176,17 +238,17 @@ class Dataset:
 
         # Second level of aggregation, implicitly over the analysis_dimension
         if extractor == 'rank':
-            result_set['rank'] = result_set[self.measure].rank(ascending=False)
+            result_set['M'] = result_set[self.measure].rank(ascending=False)
 
         elif extractor == 'pct':
-            result_set['pct'] = 100 * result_set[self.measure] / sum(result_set[self.measure])
+            result_set['M'] = 100 * result_set[self.measure] / sum(result_set[self.measure])
             # result_set['pct'] = 100 * result_set[self.measure] / result_set[self.measure].groupby(dividing_dimension).sum()
 
         elif extractor == 'delta_avg':
-            result_set['delta_avg'] = result_set[self.measure] - (result_set[self.measure].sum() / len(result_set))
+            result_set['M'] = result_set[self.measure] - (result_set[self.measure].sum() / len(result_set))
 
         elif extractor == 'delta_prev':
-            result_set['delta_prev'] = result_set.sort_values("year")[self.measure].diff()
+            result_set['M'] = result_set.sort_values("year")[self.measure].diff()
             if 'year' in subspace:
                 result_set = result_set[result_set['year'] == subspace['year']]
 
