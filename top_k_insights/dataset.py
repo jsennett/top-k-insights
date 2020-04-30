@@ -2,9 +2,8 @@ import pandas as pd
 import numpy as np
 import logging
 import heapq
+import scipy
 import scipy.stats
-import powerlaw
-
 
 
 class Dataset:
@@ -90,7 +89,7 @@ class Dataset:
                 score = self.impact(subspace, dimension) * significance(result_set)
 
                 # Generate a new insight with info needed to interpret it
-                new_insight = Insight(score, subspace, dimension, composite_extractor)
+                new_insight = Insight(score, subspace, dimension, composite_extractor, insight_type)
 
                 # Update the minheap if the insight has a top k score
                 if len(self.top_insights) < self.k:
@@ -165,24 +164,63 @@ class Dataset:
         output: a significance score between [0.0, 1.0]
 
         To calculate point significance:
+
             obtain max value from X, X_max
             Fit X - X_max to a power-law distribution
             derive prediction error for x_max: err_max = x_max_pred - x_max
             calculate p value: p = P(e > err_max | N(u, d))
             sig = 1 - p
+
+        To fit power law distribution, convert to an equivalent linear model
+
+            powerlaw:           y = ax^b
+            equivalent linear:  log(y) = log(a) + b*log(x)
+
+            In our case, y is the frequency of each x value
+
+        # TODO: also enumerate mininmum point significance
         """
-        # find x_max, X \ x_max
+        # With too few data points, we can't actually calculate point sig
+        if len(result_set) <= 2:
+            return 0.0
+
+        # x_max
         x_max = result_set['M'].max()
-        result_set_without_max = result_set[result_set.index != result_set['M'].idxmax()]
 
-        # Fit X \ x_max to power-law distribution
-        #fit = powerlaw.Fit(np.array(result_set['M']) + 1, xmin=1, discrete=True)
-        #x_max, x_max_idx = max(result_set['M'])
+        # X \ x_max
+        freq = result_set['M'].value_counts()
+        freq_x_max = freq[x_max]
+        if freq_x_max == 1:
+            freq = freq.drop(x_max)
+        else:
+            freq[x_max] -= 1
 
-        # TODO: finish implementing point-significance function
+        # Fit power law distribution by fitting linear model to log
+        logx = np.lib.scimath.log2(freq.index)
+        logy = np.lib.scimath.log2(freq)
+        slope, intercept, r, p, stderr = scipy.stats.linregress(logx, logy)
 
-        import random
-        return random.randint(0,100) / 100 # placeholder
+        # TODO: cut out parts not needed for p calc
+        res = pd.DataFrame(zip(logx, logy, freq.index, freq), columns=['log_num_papers', 'log_freq', 'num_papers', 'freq'])
+        res['err_pred_freq'] = 2**(intercept + slope * res['log_num_papers']) - res['freq']
+
+        pred_max_freq = 2**(intercept + slope * np.lib.scimath.log2(x_max))
+
+        # Define error as actual freq minus predicted freq
+        err_pred_y_max = freq_x_max - pred_max_freq
+
+        # Assume errors fit a Gaussian distribution
+        Z = (err_pred_y_max - res['err_pred_freq'].mean())/res['err_pred_freq'].std()
+
+        # An insight would be that the max value exceeds the predicted max
+        # value. In this case, the err_pred_y_max would be positive, based
+        # on how we defined the error. So, we should use one-tailed test,
+        # only caring about the right tail. A left tail error means that
+        # our maximum value was lower than expected, which isn't insightful.
+        # cdf(Z) = 1 - p = significance_score
+        significance_score = scipy.stats.norm.cdf(Z)
+
+        return significance_score
 
 
     def extract_result_set(self, subspace, dividing_dimension, composite_extractor):
@@ -315,11 +353,12 @@ class Dataset:
 
 class Insight:
 
-    def __init__(self, score, subspace, dimension, composite_extractor):
+    def __init__(self, score, subspace, dimension, composite_extractor, insight_type):
         self.score = score
         self.subspace = subspace
         self.dimension = dimension
         self.composite_extractor = composite_extractor
+        self.insight_type = insight_type
 
     def __lt__(self, other):
         return self.score < other.score
@@ -340,5 +379,6 @@ class Insight:
         <Insight: score = %f,
         subspace = %s,
         dimension = %s,
-        composite_extractor = %s> """ % (self.score, self.subspace,
-                                         self.dimension, self.composite_extractor)
+        composite_extractor = %s,
+        insight_type = %s> """ % (self.score, self.subspace, self.dimension,
+                                  self.composite_extractor, self.insight_type)
