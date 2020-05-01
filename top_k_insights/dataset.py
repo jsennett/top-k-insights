@@ -8,14 +8,26 @@ import scipy.stats
 
 class Dataset:
 
-    def __init__(self, filename):
+    def __init__(self, data, measure, dimensions):
+        """
+        data: pandas dataframe
+        measure: string measure name
+        dimensions: array of strings of dimension names
+        """
+        self.data = data
+        self.measure = measure
+        self.dimensions = dimensions
+
+    @classmethod
+    def fromfilename(cls, filename):
         """
         Datasets should be csvs formatted with dimension columns to the left
         and measure as the final column. The first row should be a header.
         """
-        self.data = pd.read_csv(filename, encoding='mac_roman')
-        self.measure = self.data.columns[-1]
-        self.dimensions = self.data.columns[:-1]
+        data = pd.read_csv(filename, encoding='mac_roman')
+        measure = data.columns[-1]
+        dimensions = data.columns[:-1]
+        return cls(data, measure, dimensions)
 
     def extract_insights(self, depth, k):
         """ Algorithm 1
