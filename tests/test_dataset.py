@@ -1,7 +1,7 @@
 from top_k_insights.dataset import Dataset
 import pandas as pd
 
-dataset = Dataset.fromfilename("/Users/jsennett/Code/top-k-insights/data/vehicle-sales.csv")
+dataset = Dataset.fromfilename("/Users/jsennett/Code/top-k-insights/data/vehicle-sales.csv", 'sum')
 
 def test_init():
     assert(len(dataset.dimensions) == 3)
