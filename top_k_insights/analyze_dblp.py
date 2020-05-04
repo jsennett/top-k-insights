@@ -5,27 +5,26 @@ import logging
 from datetime import datetime
 import time
 
-log_filename = datetime.now().strftime('mylogfile_%H_%M_%d_%m_%Y.log')
-logging.basicConfig(level=logging.DEBUG, filename='output.log')
+log_filename = datetime.now().strftime('top-k-log_%H_%M_%d_%m_%Y.log')
+logging.basicConfig(level=logging.DEBUG, filename=log_filename)
 
 def analyze_papers():
     """ Analyze papers dataset """
     filename = "/Users/jsennett/Code/top-k-insights/data/all-papers.csv"
     data = pd.read_csv(filename, encoding='mac_roman', dtype = {'school': str})
 
-    # Exclude venue name
-    # dimensions = ['venue_name', 'year', 'school', 'venue_type']
-    dimensions = ['year', 'school', 'venue_type']
+    dimensions = ['venue_name', 'year', 'school', 'venue_type']
     measure = None
     agg = 'count'
     dataset = Dataset(data, dimensions, measure, agg)
-    del dataset.data['venue_name']
     logging.info("dataset columns: %s " % dataset.data.columns)
 
-    top_insights = dataset.extract_insights(depth=2, k=10)
-    print("Top insights:")
+    top_insights = dataset.extract_insights(depth=2, k=100)
+
+    logging.info("Top insights:")
     sorted_insights = sorted(top_insights, key=lambda x:x.score)
     for insight in sorted_insights:
+        logging.info(insight.interpretation())
         print(insight.interpretation())
 
 
@@ -97,8 +96,8 @@ def analyze_papers_single_insight_2():
 
 
 def main():
-    #analyze_papers()
-    analyze_papers_subset()
+    analyze_papers()
+    #analyze_papers_subset()
     #analyze_papers_single_insight()
     #analyze_papers_single_insight_2()
 

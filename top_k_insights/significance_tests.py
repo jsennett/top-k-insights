@@ -162,29 +162,35 @@ def linear_point(rs):
     assert("year" in rs.columns and "M" in rs.columns)
     slope, intercept, r, p, stderr = scipy.stats.linregress(rs['year'], rs['M'])
 
-    rs['pred'] = intercept + slope * rs['year']
-    rs['err'] = rs['M'] - rs['pred']
+    # err = y - pred_y
+    rs['err'] = rs['M'] - intercept + slope * rs['year']
 
     # Fit errors to normal distribution, and see how far off the furthest error is
     x_mean, x_std = scipy.stats.norm.fit(rs['err'])
     max_err_idx = rs['err'].abs().idxmax()
     max_err = rs['err'][max_err_idx]
-
     err_rs = rs[['err']].rename(columns={'err':'M'})
 
-    err_insight, err_significance = normal(err_rs)
+    # If we're considering a negative err, flip the sign since normal
+    # sig test looks for maximum values
+    negative_error = (max_err < 0)
+    if negative_error:
+        _, err_significance = normal(-err_rs)
+    else:
+        _, err_significance = normal(err_rs)
 
     # Weight the significance score by the goodness of fit
+    # of the line excluding the maximum error point
+    _, _, r, _, _ = scipy.stats.linregress(rs['year'].drop(max_err_idx), rs['M'].drop(max_err_idx))
+
     significance_score = err_significance * (r**2)
 
-    print("err significance:", err_significance)
-    print("err insight:", err_insight)
-
     # A positive err means the actual value > predicted value
-    if rs['err'][max_err_idx] > 0:
-        insight = "year {%d} surprisingly high at {%0.2f}" % (rs['year'][max_err_idx], rs['M'][max_err_idx])
-    else:
+    if negative_error:
         insight = "year {%d} surprisingly low at {%0.2f}" % (rs['year'][max_err_idx], rs['M'][max_err_idx])
-    return insight, err_significance
+    else:
+        insight = "year {%d} surprisingly high at {%0.2f}" % (rs['year'][max_err_idx], rs['M'][max_err_idx])
+
+    return insight, significance_score
 
 

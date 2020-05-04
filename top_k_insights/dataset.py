@@ -34,6 +34,9 @@ class Dataset:
         else:
             self.measure = measure
 
+        # Fill np.nan = '' so that an empty cell is considered
+        self.data = self.data.fillna('')
+
         # Cache the overall sum of the measure, since we use it repeatedly
         self.total_measure_sum = self.data[self.measure].sum()
 
@@ -64,7 +67,7 @@ class Dataset:
                 enumerate_insight(subspace, dimension, composite extractor)
         return min-heap
         """
-        logging.info("Extracting insights for depth: " + str(depth))
+        logging.info("extract_insights(%s, %s)" % (depth, k))
 
         # Reset analysis attributes
         self.top_insights = []
@@ -101,7 +104,8 @@ class Dataset:
             for each insight type:
                 score = impact(subspace, dimension) * significance(result_set)
         """
-        #logging.info("enumerate_insight(%s, %s, %s)" % (subspace, dimension, composite_extractor))
+        print("enumerate_insight(%s, %s, %s)" % (subspace, dimension, composite_extractor))
+        logging.info("enumerate_insight(%s, %s, %s)" % (subspace, dimension, composite_extractor))
 
         # Optimization: only check for insights if the impact of the subspace
         # exceeds the score of the top kth insight, since this is an upper
@@ -151,20 +155,27 @@ class Dataset:
 
                     # Generate a new insight with info needed to interpret it
                     new_insight = Insight(insight, insight_score, subspace.copy(), dimension, composite_extractor, insight_type, significance_score, sigtest.__name__, impact)
-
                     print("INSIGHT:","(%s) %s - sig={%0.2f}, impact={%0.2f}, score={%0.2f}" % (sigtest.__name__, insight, significance_score, impact, insight_score))
 
                     # Update the minheap if the insight has a top k score
                     if len(self.top_insights) < self.k:
                         heapq.heappush(self.top_insights, new_insight)
-                        logging.info("added insight: %s" % new_insight) # debug
+                        logging.info("added insight: %s" % new_insight)
                     else:
                         if new_insight.score > self.top_insights[0]:
-                            logging.info("added insight: %s" % new_insight) # debug
+                            logging.info("added insight: %s" % new_insight)
                         heapq.heappushpop(self.top_insights, new_insight)
 
         # Enumerate child subspaces
-        unique_vals = self.data[dimension].unique()
+        # Since 'venue_name' dimension only has one sizeable unique val
+        # don't consider other child subspaces since they will have low impact
+        if dimension == 'venue_name':
+            unique_vals = ['CoRR']
+        elif dimension == 'school':
+            unique_vals = ['']
+        else:
+            unique_vals = self.data[dimension].unique()
+
         for value in unique_vals:
             child_subspace = subspace.copy()
             child_subspace[dimension] = value
@@ -269,6 +280,7 @@ class Dataset:
 
             # First level of aggregation: sum of the original measure
             result_set = subset.groupby([dividing_dimension, analysis_dimension]).agg({self.measure:'sum'})
+            assert(len(result_set) != 0) # sanity check
 
             # Add dimension information back into the result set
             result_set = result_set.reset_index(drop=False)
@@ -299,7 +311,7 @@ class Dataset:
                 result_set = result_set.merge(group_delta_prev, on=dividing_dimension)
 
             # Filter by the subspace value of the analysis dimension that we
-            # left out before
+            # left out of the temp_subspace before
             result_set = result_set[result_set[analysis_dimension] == subspace[analysis_dimension]]
 
             return result_set[result_set['M'].notnull()]
@@ -316,6 +328,7 @@ class Dataset:
         In addition, the extractor delta_prev is only valid for ordinal dimensions;
         Assume that the only ordinal dimension will be 'year'.
         """
+        logging.info("is_valid(%s, %s, %s)" % (subspace, dimension, composite_extractor))
         for (extractor, measure) in composite_extractor[1:]:
             if measure != dimension and subspace.get(measure) is None:
                 return False
@@ -330,6 +343,7 @@ class Dataset:
         """
         The impact score is the market share of the subspace S.
         """
+        logging.info("impact(%s, %s)" % (subspace, dimension))
         subset = self.data.loc[(self.data[list(subspace)] == pd.Series(subspace, dtype=object)).all(axis=1)]
 
         numerator = subset[self.measure].sum()
