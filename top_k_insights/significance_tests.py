@@ -32,9 +32,9 @@ def get_distribution(insight_type, dimension, depth, composite_extractor):
         elif depth == 2 and ordinal:
             return linear_point
 
-        # TODO: determine best fit for these composite aggregate measures
+        # Choose the best fit for these composite aggregate measures
         elif depth == 2 and not ordinal and composite_extractor[1][0] == 'pct':
-            return normal
+            return powerlaw
         elif depth == 2 and not ordinal and composite_extractor[1][0] == 'delta_prev':
             return normal
         elif depth == 2 and not ordinal and composite_extractor[1][0] == 'delta_avg':
