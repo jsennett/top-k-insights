@@ -19,28 +19,30 @@ def get_distribution(insight_type, dimension, depth, composite_extractor):
                       try to fit the top half of the positive and negative data.
 
     """
+    # Shape insights should all use linear-shape test
     if insight_type == "shape":
         return linear_shape
-    else:
 
-        # TODO: have a separate point estimate for linear trends
-        ordinal = (dimension == 'year')
-        if depth == 1 and ordinal:
-            return linear_point
-        elif depth == 1 and not ordinal:
-            return powerlaw
-        elif depth == 2 and ordinal:
-            return linear_point
+    # Point insights should use linear_point if ordinal
+    ordinal = (dimension == 'year')
+    if ordinal:
+        return linear_point
 
-        # Choose the best fit for these composite aggregate measures
-        elif depth == 2 and not ordinal and composite_extractor[1][0] == 'pct':
-            return powerlaw
-        elif depth == 2 and not ordinal and composite_extractor[1][0] == 'delta_prev':
-            return normal
-        elif depth == 2 and not ordinal and composite_extractor[1][0] == 'delta_avg':
-            return normal
-        elif depth == 2 and not ordinal and composite_extractor[1][0] == 'rank':
-            return normal
+    # Point insights with non-ordinal dimension should use powerlaw or normal
+    if depth == 1:
+        return powerlaw
+
+    # The remaining insights are non-ordinal, depth 2 point insights
+    extractor_to_sigtest = {
+        'pct':powerlaw,
+        'delta_prev': normal,
+        'delta_avg': normal,
+        'rank': normal
+    }
+
+    # Choose the best fit for these composite aggregate measures
+    extractor = composite_extractor[1][0]
+    return extractor_to_sigtest[extractor]
 
 
 def powerlaw(rs):
