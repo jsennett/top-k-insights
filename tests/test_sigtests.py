@@ -20,13 +20,6 @@ def test_powerlaw():
 
 def test_normal():
 
-    # perfect fit powerlaw with guassian noise
-    rs = pd.DataFrame([10 * np.random.normal() + 15 for _ in range(10000)], columns=['M'])
-    (insight, sig) = st.normal(rs)
-    print(insight, "expected max:", max(rs['M']))
-    print("significance score:", sig, "(expected: <", .4, ")")
-    assert(sig < 0.4)
-
     # perfect fit powerlaw with guassian noise but an extreme max value
     rs = pd.DataFrame([10 * np.random.normal() + 15 for _ in range(10000)], columns=['M'])
     rs.iloc[-1] += 15000

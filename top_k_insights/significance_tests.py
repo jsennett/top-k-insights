@@ -123,6 +123,12 @@ def normal(rs):
     x_mean = rs['M'].mean()
     x_std = rs['M'].std()
 
+    # Some distributions have no variance.
+    # In that case, there is no significant point of interest, so we can
+    # return early with a score of zero
+    if x_std == 0.0:
+        return ("no variance", 0.0)
+
     # Calculate significance
     x_max_Z = (x_max - x_mean) / x_std
     x_max_p = 1 - scipy.stats.norm.cdf(x_max_Z)

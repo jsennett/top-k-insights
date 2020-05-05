@@ -1,48 +1,43 @@
-import significance_tests as st
-
 import pandas as pd
-import numpy as np
 import logging
 import heapq
-import scipy
-import scipy.stats
+
+import significance_tests as st
 
 
-class Dataset:
+class InsightExtractor:
 
     def __init__(self, data, dimensions, measure, agg):
         """
         input:
             data: pandas dataframe
-            measure: string measure name
             dimensions: array of strings of dimension names
+            measure: string measure name
             agg: string of the level-1 aggregation function
                 to apply (one of: [sum, count]), default "sum"
         """
-        self.data = data
+        self.data = data.fillna('')
         self.dimensions = dimensions
         self.agg = agg
-        # todo: sort dimensions by increasing dimensionality, so that the
-        # initial insights are for larger impact groups
 
         # If the aggregate measure is count, create a column of 1s
         # as our measure column. This allows us to use the same 'sum'
         # aggregate functions in place of count
         if self.agg == 'count':
             self.measure = 'count'
-            data['count'] = 1
+            self.data['count'] = 1
         else:
             self.measure = measure
-
-        # Fill np.nan = '' so that an empty cell is considered
-        self.data = self.data.fillna('')
 
         # Cache the overall sum of the measure, since we use it repeatedly
         self.total_measure_sum = self.data[self.measure].sum()
 
-        # A cutoff score: don't look for insights that have a subgroup
+        # A cutoff score: don't look for insights that have a subgroup impact
         # smaller than this cutoff score.
         self.cutoff = 0.01
+
+        # Starting Insight id, unique for each insight found
+        self.iid = 1001
 
     @classmethod
     def fromfilename(cls, filename, agg):
@@ -67,7 +62,6 @@ class Dataset:
                 enumerate_insight(subspace, dimension, composite extractor)
         return min-heap
         """
-        logging.info("extract_insights(%s, %s)" % (depth, k))
 
         # Reset analysis attributes
         self.top_insights = []
@@ -90,7 +84,6 @@ class Dataset:
         subspace = {}
         for composite_extractor in composite_extractors:
             for dimension in self.dimensions:
-                logging.info(" ** Enumerating all insights for dimension %s " % dimension)
                 self.enumerate_insight(subspace.copy(), dimension, composite_extractor)
 
         return self.top_insights
@@ -136,8 +129,6 @@ class Dataset:
                 logging.info("RESULT SET:\n %s" % result_set.head(30))
                 logging.info("(%s rows)" % len(result_set))
 
-                print("RESULT SET:", result_set.head(10))
-
                 # Enumerate over each insight type
                 for insight_type in ["point", "shape"]:
 
@@ -154,8 +145,11 @@ class Dataset:
                     logging.info("  *  Tested using %s - sig={%0.2f}, impact={%0.2f}, score={%0.2f}" % (sigtest.__name__, significance_score, impact, insight_score))
 
                     # Generate a new insight with info needed to interpret it
-                    new_insight = Insight(insight, insight_score, subspace.copy(), dimension, composite_extractor, insight_type, significance_score, sigtest.__name__, impact)
-                    print("INSIGHT:","(%s) %s - sig={%0.2f}, impact={%0.2f}, score={%0.2f}" % (sigtest.__name__, insight, significance_score, impact, insight_score))
+                    new_insight = Insight(self.iid, insight, insight_score, subspace.copy(), dimension, composite_extractor, insight_type, significance_score, sigtest.__name__, impact)
+                    self.iid += 1
+
+                    logging.info("INSIGHT FOUND: {}".format(new_insight.interpretation()))
+                    print("INSIGHT FOUND: {}".format(new_insight.interpretation()))
 
                     # Update the minheap if the insight has a top k score
                     if len(self.top_insights) < self.k:
@@ -167,12 +161,16 @@ class Dataset:
                         heapq.heappushpop(self.top_insights, new_insight)
 
         # Enumerate child subspaces
-        # Since 'venue_name' dimension only has one sizeable unique val
-        # don't consider other child subspaces since they will have low impact
+        # Since certian  dimensions have zero or only one sizeable unique val,
+        # don't enumerate over the child subspaces of the infrequent values.
+        # The subspaces will be very low impact and will therefore have low
+        # insight scores which will not make it to the top-k scores
         if dimension == 'venue_name':
             unique_vals = ['CoRR']
         elif dimension == 'school':
             unique_vals = ['']
+        elif dimension == "paperid" or dimension == "authid":
+            unique_vals = []
         else:
             unique_vals = self.data[dimension].unique()
 
@@ -358,8 +356,11 @@ class Dataset:
 
 class Insight:
 
-    def __init__(self, insight, score, subspace, dimension, composite_extractor,
+    csv_header = "id;score;type;SG(S,D);CE;insight;H0;sig;impact"
+
+    def __init__(self, id, insight, score, subspace, dimension, composite_extractor,
                  insight_type, significance, sigtest, impact):
+        self.id = id
         self.insight = insight
         self.score = score
         self.subspace = subspace
@@ -381,32 +382,31 @@ class Insight:
 
     def interpretation(self):
         if len(self.composite_extractor) == 2:
-            agg = "{lvl2} of {lvl1}".format(lvl2=self.composite_extractor[1][0],
-                                            lvl1=self.composite_extractor[0][0])
+            agg = "{extractor} of {analysis_dimension} of {measure}".format(
+                extractor=self.composite_extractor[1][0],
+                analysis_dimension=self.composite_extractor[1][1],
+                measure=self.composite_extractor[0][0])
         else:
-            agg = self.composite_extractor[0][1]
+            agg = "{measure}".format(measure=self.composite_extractor[0][0])
 
-        return (" [{score}] Aggregating {agg} over {dimension}, " +
-                "{insight} stood out using {sigtest} test, considering only the " +
-                "subspace {subspace}.").format(score=round(self.score, 2),
-                                               agg=agg,
-                                               dimension=self.dimension,
-                                               insight=self.insight,
-                                               sigtest=self.sigtest,
-                                               subspace=self.subspace)
+        return ("Aggregating {agg} over dividing dimension {dimension}," +
+                "{insight} stood out using {sigtest} test, considering only " +
+                "the subspace with dimensions {subspace}").format(
+                    agg=agg,
+                    dimension=self.dimension,
+                    insight=self.insight,
+                    sigtest=self.sigtest,
+                    subspace=self.subspace)
 
-    def __repr__(self):
-        return """
-        <Insight: score = %f,
-        subspace = %s,
-        dimension = %s,
-        composite_extractor = %s,
-        insight_type = %s,
-        p = %s,
-        sigtest = %s,
-        impact = %s> """ % (self.score, self.subspace, self.dimension,
-                            self.composite_extractor, self.insight_type,
-                            self.significance, self.sigtest, self.impact)
-
-
-
+    def to_csv(self):
+        return "%s;%s;%s;%s;%s;%s;%s;%s;%s" % (
+            self.id,
+            round(self.score, 4),
+            self.insight_type,
+            "SG(%s,%s)" % (self.subspace, self.dimension),
+            self.composite_extractor,
+            self.insight,
+            self.sigtest,
+            round(self.significance, 4),
+            round(self.impact, 4)
+        )
