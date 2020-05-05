@@ -410,3 +410,46 @@ class Insight:
             round(self.significance, 4),
             round(self.impact, 4)
         )
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Extract Top Insights from DBLP')
+    parser.add_argument('dataset', type=str,
+                        help="'papers' or 'collaborators'")
+    parser.add_argument('depth', type=int,
+                        help="1 or 2")
+    parser.add_argument('k', type=int,
+                        help="1 to 100, integer")
+    parser.add_argument('-encoding', type=str,
+                        help="dataset encoding; ('mac_roman' works on locally)")
+    args = parser.parse_args()
+
+    print("encoding:",args.encoding, type(args.encoding))
+
+
+    # Validate inputs
+    if (args.dataset not in ['papers', 'collaborators']
+        or args.depth not in [1, 2]
+        or args.k < 1
+        or args.k > 100):
+        parser.print_help()
+        parser.print_usage()
+
+    # Check for datasets
+    if args.dataset == 'papers':
+        filename = "./data/all-papers.csv"
+        data = pd.read_csv(filename, encoding=args.encoding, dtype = {'school': str})
+        dimensions = ['venue_name', 'year', 'school', 'venue_type']
+        measure = None
+        agg = 'count'
+        ie = InsightExtractor(data, dimensions, measure, agg)
+
+        top_insights = dataset.extract_insights(depth=depth, k=10)
+
+
+
+
+if __name__ == "__main__":
+    main()
