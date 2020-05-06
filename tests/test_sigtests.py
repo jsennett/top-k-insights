@@ -53,7 +53,3 @@ def test_linear_negative_point():
     print(insight, "expected insight: {%0.2f} at x=%d" % (rs['M'][500], rs['year'][500]))
     print("significance score:", sig, "(expected: >", .9, ")")
     assert(sig > 0.9)
-
-
-if __name__ == "__main__":
-    test_linear_point()

@@ -100,7 +100,8 @@ class InsightExtractor:
         print("enumerate_insight(%s, %s, %s)" % (subspace, dimension, composite_extractor))
         logging.info("enumerate_insight(%s, %s, %s)" % (subspace, dimension, composite_extractor))
 
-        # Optimization: only check for insights if the impact of the subspace
+        # Impact Upper Bound Optimization:
+        # only check for insights if the impact of the subspace
         # exceeds the score of the top kth insight, since this is an upper
         # bound on the insight score. All child subspaces can also be skipped.
         impact = self.impact(subspace, dimension)
@@ -147,7 +148,6 @@ class InsightExtractor:
                     # Generate a new insight with info needed to interpret it
                     new_insight = Insight(self.iid, insight, insight_score, subspace.copy(), dimension, composite_extractor, insight_type, significance_score, sigtest.__name__, impact)
                     self.iid += 1
-
                     logging.info("INSIGHT FOUND: {}".format(new_insight.interpretation()))
                     print("INSIGHT FOUND: {}".format(new_insight.interpretation()))
 
@@ -160,7 +160,6 @@ class InsightExtractor:
                             logging.info("added insight: %s" % new_insight)
                         heapq.heappushpop(self.top_insights, new_insight)
 
-        # Enumerate child subspaces
         # Since certian  dimensions have zero or only one sizeable unique val,
         # don't enumerate over the child subspaces of the infrequent values.
         # The subspaces will be very low impact and will therefore have low
@@ -174,6 +173,7 @@ class InsightExtractor:
         else:
             unique_vals = self.data[dimension].unique()
 
+        # Enumerate child subspaces
         for value in unique_vals:
             child_subspace = subspace.copy()
             child_subspace[dimension] = value
@@ -183,20 +183,20 @@ class InsightExtractor:
 
     def extract_result_set(self, subspace, dividing_dimension, composite_extractor):
         """
-        subspace is a dict of ('dimension_name':'value') pairs
-            for filtered dimensions. Excluding a dimension means no filter.
+        Algorithm 2: Build a result set
 
         result_set = empty-set
         for val in dividing_dimension:
             subspace[dividing_dimension] = val
             partial_result_set = recur_extract_result_set(subspace, self.depth, composite_extractor)
-            partial_result_set['subspace'] = str(subspace) # decode with eval()
             result_set += partial_result_set
 
         unique_vals = self.data[dimension].unique()
         """
         logging.info("extract_result_set(%s, %s, %s" % (subspace, dividing_dimension, composite_extractor))
 
+        # Since we only handle depth 1 or 2, I just handle those two cases
+        # separately rather than recursively.
         if self.depth == 1:
 
             subset = self.data.loc[(self.data[list(subspace)] == pd.Series(subspace, dtype=object)).all(axis=1)]
@@ -216,7 +216,7 @@ class InsightExtractor:
         # 2) the extractor analysis_dimension != dividing_dimension but
         #    the subspace contains a certain value for analysis_dimension
 
-        # Case 1 is simpler: just filter to the subset, aggregate by
+        # Case 1: just filter to the subset, aggregate by
         # dividing_dimension, agg(sum), and then calculate measure using the
         # extractor over agg(sum) (e.g. rank, delta_prev, pct, delta_avg).
         (extractor, analysis_dimension) = composite_extractor[1]
@@ -241,36 +241,32 @@ class InsightExtractor:
                 if dim not in result_set.columns:
                     result_set[dim] = subspace.get(dim, "*")
 
-
             # Second level of aggregation, implicitly over the analysis_dimension
             if extractor == 'rank':
                 result_set['M'] = result_set[self.measure].rank(ascending=False)
-
             elif extractor == 'pct':
                 result_set['M'] = 100 * result_set[self.measure] / sum(result_set[self.measure])
-                # result_set['pct'] = 100 * result_set[self.measure] / result_set[self.measure].groupby(dividing_dimension).sum()
-
             elif extractor == 'delta_avg':
                 result_set['M'] = result_set[self.measure] - (result_set[self.measure].sum() / len(result_set))
-
             elif extractor == 'delta_prev':
                 result_set['M'] = result_set.sort_values("year")[self.measure].diff()
                 if 'year' in subspace:
                     result_set = result_set[result_set['year'] == subspace['year']]
 
-            # exclude null values; these are common during delta_prev if no
-            # prev year is available
+            # exclude null values; these can be common, for example
+            # during delta_prev if no prev year is available
             return result_set[result_set['M'].notnull()]
 
-        # Case 2 is less direct. In this case, we are aggregating over both
+        # Case 2: in this case, we are aggregating over both
         # the analysis dimension and the dividing dimension. Then, we are
         # filtering to only contain the subspace value for that dimension.
         # As a result, we will then have a result for each value in the
         # dividing dimension and a single known value for the analysis
         # dimension.
         else:
+
             # The temp subset should ignore the subspace value of the
-            # analysis_dimension since it is needed to compute the measure
+            # analysis_dimension since it is needed to compute the agg measure
             temp_subspace = subspace.copy()
             del temp_subspace[analysis_dimension]
 
@@ -278,7 +274,6 @@ class InsightExtractor:
 
             # First level of aggregation: sum of the original measure
             result_set = subset.groupby([dividing_dimension, analysis_dimension]).agg({self.measure:'sum'})
-            assert(len(result_set) != 0) # sanity check
 
             # Add dimension information back into the result set
             result_set = result_set.reset_index(drop=False)
@@ -289,27 +284,24 @@ class InsightExtractor:
             # Second level of aggregation over the dividing dimension
             if extractor == 'rank':
                 result_set['M'] = result_set.groupby(dividing_dimension)[self.measure].rank(ascending=False, method='first')
-
             elif extractor == 'pct':
                 group_sum = result_set.rename(columns={self.measure:'M'}).groupby(dividing_dimension).sum()['M']
                 result_set = result_set.merge(group_sum, on=dividing_dimension)
                 result_set['M'] = 100 * result_set[self.measure] / result_set['M']
-
             elif extractor == 'delta_avg':
                 group_avg = result_set.rename(columns={self.measure:'M'}).groupby(dividing_dimension).mean()['M']
                 result_set = result_set.merge(group_avg, on=dividing_dimension)
                 result_set['M'] = result_set[self.measure] - result_set['M']
-
-            # We only need to consider for the subspace year and the
-            # previous year, since 'year' is the only ordinal column
             elif extractor == 'delta_prev':
+                # We only need to consider for the subspace year and the
+                # previous year, since 'year' is the only ordinal column
                 result_set = result_set[(result_set['year'] == subspace['year']) | (result_set['year'] == subspace['year'] - 1)]
                 group_delta_prev = (result_set[result_set['year'] == subspace['year']].rename(columns={self.measure:'M'}).groupby(dividing_dimension).first()['M']
                                     - result_set[result_set['year'] == subspace['year']-1].rename(columns={self.measure:'M'}).groupby(dividing_dimension).first()['M'])
                 result_set = result_set.merge(group_delta_prev, on=dividing_dimension)
 
-            # Filter by the subspace value of the analysis dimension that we
-            # left out of the temp_subspace before
+            # Now, filter by the subspace value of the analysis dimension that
+            # we left out of the temp_subspace before
             result_set = result_set[result_set[analysis_dimension] == subspace[analysis_dimension]]
 
             return result_set[result_set['M'].notnull()]
@@ -408,48 +400,5 @@ class Insight:
             self.insight,
             self.sigtest,
             round(self.significance, 4),
-            round(self.impact, 4)
-        )
+            round(self.impact, 4))
 
-
-def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(description='Extract Top Insights from DBLP')
-    parser.add_argument('dataset', type=str,
-                        help="'papers' or 'collaborators'")
-    parser.add_argument('depth', type=int,
-                        help="1 or 2")
-    parser.add_argument('k', type=int,
-                        help="1 to 100, integer")
-    parser.add_argument('-encoding', type=str,
-                        help="dataset encoding; ('mac_roman' works on locally)")
-    args = parser.parse_args()
-
-    print("encoding:",args.encoding, type(args.encoding))
-
-
-    # Validate inputs
-    if (args.dataset not in ['papers', 'collaborators']
-        or args.depth not in [1, 2]
-        or args.k < 1
-        or args.k > 100):
-        parser.print_help()
-        parser.print_usage()
-
-    # Check for datasets
-    if args.dataset == 'papers':
-        filename = "./data/all-papers.csv"
-        data = pd.read_csv(filename, encoding=args.encoding, dtype = {'school': str})
-        dimensions = ['venue_name', 'year', 'school', 'venue_type']
-        measure = None
-        agg = 'count'
-        ie = InsightExtractor(data, dimensions, measure, agg)
-
-        top_insights = dataset.extract_insights(depth=depth, k=10)
-
-
-
-
-if __name__ == "__main__":
-    main()

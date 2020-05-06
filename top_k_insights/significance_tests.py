@@ -90,7 +90,6 @@ def powerlaw(rs):
     # This would result in a negative x_max_err, so only do a one-sided test
     Z = (x_max_err - rs['err'].mean())/rs['err'].std()
     significance_score = 1 - scipy.stats.norm.cdf(Z)
-
     insight = "maximum point %0.2f" % x_max
 
     return (insight, significance_score)

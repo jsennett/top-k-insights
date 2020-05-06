@@ -6,7 +6,9 @@ from datetime import datetime
 import time
 import argparse
 
+
 # Log to file
+start = time.time()
 log_filename = datetime.now().strftime('log/topk_%m_%d_%H_%M_%S.log')
 logging.basicConfig(level=logging.INFO, filename=log_filename)
 bar = "*" * 60
@@ -30,64 +32,33 @@ def main():
         parser.print_help()
         parser.print_usage()
 
-    # Check for datasets
+    # Prepare for analysis
     if args.dataset == 'papers':
         filename = "./data/all-papers.csv"
         data = pd.read_csv(filename, encoding=args.encoding, dtype = {'school': str})
         dimensions = ['venue_name', 'year', 'school', 'venue_type']
         measure = None
         agg = 'count'
-
-    if args.dataset == 'collaborators':
+    elif args.dataset == 'collaborators':
         filename = "./data/all-paperauths.csv"
-        data = pd.read_csv(filename, encoding=args.encoding, dtype = {'school': str})
-        dimensions = ['venue_name', 'year', 'school', 'venue_type']
+        data = pd.read_csv(filename, encoding=args.encoding)
+        dimensions = ['paperid', 'authid', "year"]
         measure = None
         agg = 'count'
 
-
+    # Extract insights
     ie = InsightExtractor(data, dimensions, measure, agg)
     top_insights = ie.extract_insights(depth=args.depth, k=args.k)
+
+    # Print results
     print_top_insights(top_insights)
 
+    # Print running time
+    end = time.time()
+    print(bar)
+    print(" Finished analysis of DBLP in %0.2f seconds" % (end - start))
+    print(bar)
 
-
-if __name__ == "__main__":
-    main()
-
-
-
-
-
-
-def analyze_papers(depth):
-    """ Analyze papers dataset """
-    filename = "/Users/jsennett/Code/top-k-insights/data/all-papers.csv"
-
-    data = pd.read_csv(filename, encoding='mac_roman', dtype = {'school': str})
-    dimensions = ['venue_name', 'year', 'school', 'venue_type']
-    measure = None
-    agg = 'count'
-    dataset = InsightExtractor(data, dimensions, measure, agg)
-
-    top_insights = dataset.extract_insights(depth=depth, k=10)
-
-    print_top_insights(top_insights)
-
-def analyze_paperauths(depth):
-    """ Analyze papers dataset """
-    filename = "/Users/jsennett/Code/top-k-insights/data/all-paperauths.csv"
-    data = pd.read_csv(filename, encoding='mac_roman')
-
-    dimensions = ['paperid', 'authid', "year"]
-    measure = None
-    agg = 'count'
-
-    dataset = InsightExtractor(data, dimensions, measure, agg)
-    logging.info("dataset columns: %s " % dataset.data.columns)
-
-    top_insights = dataset.extract_insights(depth=depth, k=10)
-    print_top_insights(top_insights)
 
 def print_top_insights(top_insights):
 
@@ -113,9 +84,4 @@ def print_top_insights(top_insights):
 
 
 if __name__ == "__main__":
-    start = time.time()
     main()
-    end = time.time()
-    print(bar)
-    print(" Finished analysis of DBLP in %0.2f seconds" % (end - start))
-    print(bar)
