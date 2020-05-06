@@ -2,6 +2,7 @@
 *.DS_Store
 *~
 *.*.sw?
+submission/
 
 
 # Byte-compiled / optimized / DLL files
